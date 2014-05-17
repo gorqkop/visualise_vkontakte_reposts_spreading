@@ -1,3 +1,6 @@
+__author__ = 'Gor'
+import requests as r
+
 class sharing_tree:
     def __init__(self, owner_id, post_id):
         self.tree = {}
