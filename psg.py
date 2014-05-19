@@ -1,5 +1,5 @@
 __author__ = 'Gor'
-import requests as r
+import requests as r, time
 
 class sharing_tree:
     def __init__(self, owner_id, post_id):
@@ -20,16 +20,31 @@ class sharing_tree:
             return [None, None]
     #Collect data about repost directions
     def collect_tree_data(self, owner_id, post_id, offset):
+        temp = {}
         data = r.get('https://api.vk.com/method/wall.getReposts?owner_id=%s&post_id=%s&count=1000&offset=%s'%(owner_id,post_id, offset)).json()['response']
         while len(data['items'])>0:
             for node in data['items']:
-                if node['from_id'] not in self.tree:
-                    self.collect_tree_data(node['from_id'], node['id'], 0)
-                    self.tree[node['from_id']]=[owner_id, node['id']]
-                    #self.collect_tree_data(node['from_id'], node['id'], 0)
+                try: temp[node['from_id']]=[owner_id, node['id'], node['reposts']['count']]
+                except:
+                    if 'reposts' not in node: temp[node['from_id']]=[owner_id, node['id'], 0]
+                    else: raise KeyError
             offset +=len(data['items'])
-            print(offset)
-            data = r.get('https://api.vk.com/method/wall.getReposts?owner_id=%s&post_id=%s&count=2&offset=%s'%(owner_id,post_id, offset)).json()['response']
+            try: data = r.get('https://api.vk.com/method/wall.getReposts?owner_id=%s&post_id=%s&count=2&offset=%s'%(owner_id,post_id, offset)).json()['response']
+            except r.ConnectionError:
+                time.sleep(3)
+                data = r.get('https://api.vk.com/method/wall.getReposts?owner_id=%s&post_id=%s&count=2&offset=%s'%(owner_id,post_id, offset)).json()['response']
+        temp_reposts = {}
+        for i in temp:
+            if temp[i][2]>0: temp_reposts[i]=temp[i]
+        if len(temp_reposts) == 0:
+            for i in temp: self.tree[i]=temp[i]
+        else:
+            print('Node %s has %s subnodes with reposts'%(owner_id, len(temp_reposts)))
+            for i in temp_reposts:
+                if i not in self.tree: self.collect_tree_data(i, temp_reposts[i][1], 0)
+        for i in temp:
+            if i not in self.tree:
+                self.tree[i]=temp[i]
     #Create graph file (.gml) for Gephi
     def create_gml(self, owner_id, post_id):
         edges = self.tree
@@ -38,7 +53,9 @@ class sharing_tree:
         file = open('%s_%s.gml'%(owner_id, post_id), 'w')
         file.write('graph\n[\n\tdirected 1')
         for n in set(nodes):
-            file.write('\n\tnode\n\t[\n\t\tid "%s"\n\t\tlabel "%s"\t]'%(n,n))
+            if n<0: t='group'
+            else: t='user'
+            file.write('\n\tnode\n\t[\n\t\tid "%s"\n\t\tlabel "%s"\t\n\t\ttype "%s"\t]'%(n,n,t))
         for edge in edges:
             file.write('\n\tedge\n\t[\n\t\tsource "%s"\n'%edges[edge][0])
             file.write('\t\ttarget "%s"\t]'%edge)
